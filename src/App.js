@@ -48,7 +48,7 @@ function App() {
           },
           options: {
             skip: 0,
-            take: 50
+            take: 3
           }
         },
         axiosConfig
