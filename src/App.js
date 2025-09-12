@@ -6,65 +6,37 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [selectedProperty, setSelectedProperty] = useState(null);
-  const [propertyDetails, setPropertyDetails] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [currentView, setCurrentView] = useState('search'); // 'search', 'results', 'details'
+  const [currentView, setCurrentView] = useState('search');
 
-  // API configuration
-  const API_URL = 'https://api.batchdata.com';
-  const BEARER_TOKEN = process.env.REACT_APP_BEARER_TOKEN || process.env.REACT_APP_AUTH_TOKEN;
+  const API_URL = process.env.REACT_APP_API_URL;
 
-  // Configure axios defaults
   const axiosConfig = {
     headers: {
       'Content-Type': 'application/json'
     }
   };
 
-  // Add Bearer token if available
-  if (BEARER_TOKEN) {
-    axiosConfig.headers['Authorization'] = `Bearer ${BEARER_TOKEN}`;
-  }
-
   const handleSearch = async () => {
     if (!searchQuery.trim()) {
-      setError('Please enter a city or zip code');
+      setError('Please enter a zip code');
       return;
     }
 
     try {
       setLoading(true);
       setError(null);
-      console.log('Searching for:', searchQuery.trim());
-      console.log('API URL:', `${API_URL}/api/v1/property/search`);
-      console.log('Request config:', axiosConfig);
-      
       const response = await axios.post(
-        `${API_URL}/api/v1/property/search`,
-        {
-          searchCriteria: {
-            query: searchQuery.trim()
-          },
-          options: {
-            skip: 0,
-            take: 50
-          }
-        },
+        `${API_URL}/api/scrape/${searchQuery.trim()}`,
+        {},
         axiosConfig
       );
       
-      console.log('API Response:', response);
-      console.log('Response data:', response.data);
-      
-      const results = response.data.results.properties;
-      console.log('Processed results:', results);
-      
+      const results = response.data.leads || [];
       setSearchResults(results);
       setCurrentView('results');
     } catch (err) {
-      console.error('Full error object:', err);
-      console.error('Error response:', err.response);
       if (err.response) {
         setError(`API Error: ${err.response.status} - ${err.response.data?.message || 'Unknown error'}`);
       } else if (err.request) {
@@ -78,10 +50,7 @@ function App() {
   };
 
   const handleAddressClick = (property) => {
-    if (!property) return;
-    
     setSelectedProperty(property);
-    setPropertyDetails(property);
     setCurrentView('details');
   };
 
@@ -90,15 +59,12 @@ function App() {
     setSearchQuery('');
     setSearchResults([]);
     setSelectedProperty(null);
-    setPropertyDetails(null);
     setError(null);
   };
   
   const handleBackToResults = () => {
     setCurrentView('results');
     setSelectedProperty(null);
-    setPropertyDetails(null);
-    setError(null);
   };
 
   const renderSearchView = () => (
@@ -106,14 +72,14 @@ function App() {
       <h1>Property Search</h1>
       <div className="controls">
         <div className="search-container">
-          <label htmlFor="search-input">Enter City or Zip Code:</label>
+          <label htmlFor="search-input">Enter Zip Code:</label>
           <input
             id="search-input"
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-            placeholder="e.g., Los Angeles, CA or 90210"
+            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+            placeholder="e.g., 90210"
             disabled={loading}
           />
         </div>
@@ -146,9 +112,9 @@ function App() {
                 <th>City</th>
                 <th>State</th>
                 <th>Zip</th>
-                <th>Year Built</th>
+                <th>Owner Name</th>
                 <th>Estimated Value</th>
-                <th>Sq Ft</th>
+                <th>Property Type</th>
                 <th>Bedrooms</th>
                 <th>Bathrooms</th>
               </tr>
@@ -160,16 +126,19 @@ function App() {
                     className="clickable-address"
                     onClick={() => handleAddressClick(property)}
                   >
-                    {property.address?.street || 'N/A'}
+                    {property["Property Address"] || 'N/A'}
                   </td>
-                  <td>{property.address?.city || 'N/A'}</td>
-                  <td>{property.address?.state || 'N/A'}</td>
-                  <td>{property.address?.zip || 'N/A'}</td>
-                  <td>{property.building?.yearBuilt || 'N/A'}</td>
-                  <td>${property.valuation?.estimatedValue?.toLocaleString() || 'N/A'}</td>
-                  <td>{property.building?.livingAreaSquareFeet?.toLocaleString() || 'N/A'}</td>
-                  <td>{property.building?.roomCount || 'N/A'}</td>
-                  <td>{property.building?.bathroomCount || 'N/A'}</td>
+                  <td>{property["City"] || 'N/A'}</td>
+                  <td>{property["State"] || 'N/A'}</td>
+                  <td>{property["Zip"] || 'N/A'}</td>
+                  <td>{property["Owner First Name"] && property["Owner Last Name"] ? 
+                    `${property["Owner First Name"]} ${property["Owner Last Name"]}` : 
+                    property["Owner First Name"] || property["Owner Last Name"] || 'N/A'}
+                  </td>
+                  <td>{property["Est. Value"] !== "-" ? property["Est. Value"] : 'N/A'}</td>
+                  <td>{property["Property Type"] !== "-" ? property["Property Type"] : 'N/A'}</td>
+                  <td>{property["Bedrooms"] !== "-" ? property["Bedrooms"] : 'N/A'}</td>
+                  <td>{property["Bathrooms"] !== "-" ? property["Bathrooms"] : 'N/A'}</td>
                 </tr>
               ))}
             </tbody>
@@ -177,54 +146,86 @@ function App() {
         </div>
       ) : (
         <div className="no-results">
-          <p>No properties found for your search. Try a different city or zip code.</p>
+          <p>No properties found for your search. Try a different zip code.</p>
         </div>
       )}
     </>
   );
 
   const renderDetailsView = () => {
-    if (!propertyDetails) return null;
+    if (!selectedProperty) return null;
 
     const formatValue = (value) => {
-      if (value === null || value === undefined) return 'N/A';
-      if (typeof value === 'number' && value > 1000) return value.toLocaleString();
-      if (typeof value === 'object') return JSON.stringify(value, null, 2);
+      if (!value || value === "-" || value === "") return 'N/A';
       return String(value);
     };
 
     const sections = [
       {
-        title: 'Property Address',
-        data: propertyDetails.address || {}
-      },
-      {
-        title: 'Valuation',
-        data: propertyDetails.valuation || {}
-      },
-      {
-        title: 'Building Details',
-        data: propertyDetails.building || {}
-      },
-      {
-        title: 'Assessment',
-        data: propertyDetails.assessment || {}
+        title: 'Property Information',
+        fields: [
+          { label: 'Address', key: 'Property Address' },
+          { label: 'City', key: 'City' },
+          { label: 'State', key: 'State' },
+          { label: 'Zip Code', key: 'Zip' },
+          { label: 'County', key: 'County' },
+          { label: 'Property Type', key: 'Property Type' },
+          { label: 'APN', key: 'APN' }
+        ]
       },
       {
         title: 'Owner Information',
-        data: propertyDetails.owner || {}
+        fields: [
+          { label: 'Owner First Name', key: 'Owner First Name' },
+          { label: 'Owner Last Name', key: 'Owner Last Name' },
+          { label: 'Phone Numbers', key: 'Phone Numbers' },
+          { label: 'Emails', key: 'Emails' },
+          { label: 'Owner Occupied', key: 'Owner Occupied' }
+        ]
       },
       {
-        title: 'Property Characteristics',
-        data: propertyDetails.general || {}
+        title: 'Mailing Address',
+        fields: [
+          { label: 'Mailing Address', key: 'Mailing Address' },
+          { label: 'Mailing City', key: 'Mailing City' },
+          { label: 'Mailing State', key: 'Mailing State' },
+          { label: 'Mailing Zip Code', key: 'Mailing Zip Code' },
+          { label: 'Mailing County', key: 'Mailing County' }
+        ]
       },
       {
-        title: 'Lot Information',
-        data: propertyDetails.lot || {}
+        title: 'Property Details',
+        fields: [
+          { label: 'Bedrooms', key: 'Bedrooms' },
+          { label: 'Bathrooms', key: 'Bathrooms' },
+          { label: 'Property Sqft', key: 'Property Sqft' },
+          { label: 'Lot Size', key: 'Lot Size' },
+          { label: 'Year Built', key: 'Year Build' }
+        ]
       },
       {
-        title: 'Tax Information',
-        data: propertyDetails.tax || {}
+        title: 'Financial Information',
+        fields: [
+          { label: 'Estimated Value', key: 'Est. Value' },
+          { label: 'Assessed Value', key: 'Assessed Value' },
+          { label: 'Last Sale Date', key: 'Last Sale Date' },
+          { label: 'Last Sale Amount', key: 'Last Sale Amount' },
+          { label: 'Total Loan Balance', key: 'Total Loan Balance' },
+          { label: 'Estimated Equity', key: 'Est. Equity' },
+          { label: 'Estimated LTV', key: 'Est. LTV' }
+        ]
+      },
+      {
+        title: 'Status Information',
+        fields: [
+          { label: 'Vacancy', key: 'Vacancy' },
+          { label: 'MLS Status', key: 'MLS Status' },
+          { label: 'Probate', key: 'Probate' },
+          { label: 'Liens', key: 'Liens' },
+          { label: 'Pre-Foreclosure', key: 'Pre-Foreclosure' },
+          { label: 'Taxes', key: 'Taxes' },
+          { label: 'Vacant', key: 'Vacant' }
+        ]
       }
     ];
 
@@ -237,22 +238,22 @@ function App() {
           <h1>Property Details</h1>
         </div>
         
-        {selectedProperty && (
-          <div className="property-summary">
-            <h3>{propertyDetails.address?.street}, {propertyDetails.address?.city}, {propertyDetails.address?.state} {propertyDetails.address?.zip}</h3>
-            <p><strong>Estimated Value:</strong> ${propertyDetails.valuation?.estimatedValue?.toLocaleString() || 'N/A'}</p>
-          </div>
-        )}
+        <div className="property-summary">
+          <h3>{selectedProperty["Property Address"]}, {selectedProperty["City"]}, {selectedProperty["State"]} {selectedProperty["Zip"]}</h3>
+          {selectedProperty["Est. Value"] !== "-" && (
+            <p><strong>Estimated Value:</strong> {selectedProperty["Est. Value"]}</p>
+          )}
+        </div>
         
         <div className="property-details">
           {sections.map((section, sectionIndex) => (
             <div key={sectionIndex} className="details-section">
               <h4>{section.title}</h4>
               <div className="details-grid">
-                {Object.entries(section.data).map(([key, value], index) => (
+                {section.fields.map((field, index) => (
                   <div key={index} className="detail-item">
-                    <strong>{key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}:</strong>
-                    <span>{formatValue(value)}</span>
+                    <strong>{field.label}:</strong>
+                    <span>{formatValue(selectedProperty[field.key])}</span>
                   </div>
                 ))}
               </div>
