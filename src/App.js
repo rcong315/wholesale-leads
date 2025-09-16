@@ -9,6 +9,9 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [currentView, setCurrentView] = useState('search');
+  const [progressMessage, setProgressMessage] = useState('');
+  const [isScrapingInProgress, setIsScrapingInProgress] = useState(false);
+  const [cacheStatus, setCacheStatus] = useState(null);
 
   const API_URL = process.env.REACT_APP_API_URL;
 
@@ -18,24 +21,118 @@ function App() {
     }
   };
 
+  const checkZipCodeStatus = async (zipCode) => {
+    try {
+      const response = await axios.get(`${API_URL}/api/status/${zipCode}`, axiosConfig);
+      return response.data;
+    } catch (err) {
+      console.error('Error checking zip code status:', err);
+      return null;
+    }
+  };
+
+  const pollProgress = async (zipCode) => {
+    let attempts = 0;
+    const maxAttempts = 1000;
+
+    const poll = async () => {
+      try {
+        const progressResponse = await axios.get(`${API_URL}/api/progress/${zipCode}`, axiosConfig);
+        const progressData = progressResponse.data;
+
+        setProgressMessage(progressData.message || 'Processing...');
+
+        if (progressData.status === 'completed' && progressData.result) {
+          setSearchResults(progressData.result.leads || []);
+          setCurrentView('results');
+          setIsScrapingInProgress(false);
+          setProgressMessage('');
+          return;
+        } else if (progressData.status === 'error') {
+          setError(progressData.message);
+          setIsScrapingInProgress(false);
+          setProgressMessage('');
+          return;
+        } else if (progressData.status === 'in_progress' && attempts < maxAttempts) {
+          attempts++;
+          setTimeout(poll, 3000); // Poll every 3 seconds
+        } else if (attempts >= maxAttempts) {
+          setError('Scraping is taking longer than expected. Please try again in a few minutes.');
+          setIsScrapingInProgress(false);
+          setProgressMessage('');
+        }
+      } catch (err) {
+        console.error('Error polling progress:', err);
+        setError('Error checking progress');
+        setIsScrapingInProgress(false);
+        setProgressMessage('');
+      }
+    };
+
+    poll();
+  };
+
   const handleSearch = async () => {
     if (!searchQuery.trim()) {
       setError('Please enter a zip code');
       return;
     }
 
+    const zipCode = searchQuery.trim();
+
     try {
       setLoading(true);
       setError(null);
+      setProgressMessage('');
+
+      // First, check the status to see if data exists or scraping is in progress
+      const status = await checkZipCodeStatus(zipCode);
+      setCacheStatus(status);
+
+      if (status && status.cached) {
+        // Data is already cached, proceed with normal scrape request (it will return cached data)
+        const response = await axios.post(
+          `${API_URL}/api/scrape/${zipCode}`,
+          {},
+          axiosConfig
+        );
+
+        const results = response.data.leads || [];
+        setSearchResults(results);
+        setCurrentView('results');
+        setLoading(false);
+        return;
+      }
+
+      if (status && status.is_scraping) {
+        // Scraping is already in progress, start polling
+        setIsScrapingInProgress(true);
+        setProgressMessage(status.scraping_progress || 'Scraping in progress...');
+        pollProgress(zipCode);
+        setLoading(false);
+        return;
+      }
+
+      // No cached data and not currently scraping, start new scrape
       const response = await axios.post(
-        `${API_URL}/api/scrape/${searchQuery.trim()}`,
+        `${API_URL}/api/scrape/${zipCode}`,
         {},
         axiosConfig
       );
-      
-      const results = response.data.leads || [];
-      setSearchResults(results);
-      setCurrentView('results');
+
+      if (response.data.status === 'started') {
+        // Scraping started, begin polling for progress
+        setIsScrapingInProgress(true);
+        setProgressMessage('Starting scrape...');
+        pollProgress(zipCode);
+      } else if (response.data.leads) {
+        // Got results immediately (from cache)
+        setSearchResults(response.data.leads);
+        setCurrentView('results');
+      } else {
+        setError('Unexpected response from server');
+      }
+
     } catch (err) {
       if (err.response) {
         setError(`API Error: ${err.response.status} - ${err.response.data?.message || 'Unknown error'}`);
@@ -60,8 +157,11 @@ function App() {
     setSearchResults([]);
     setSelectedProperty(null);
     setError(null);
+    setProgressMessage('');
+    setIsScrapingInProgress(false);
+    setCacheStatus(null);
   };
-  
+
   const handleBackToResults = () => {
     setCurrentView('results');
     setSelectedProperty(null);
@@ -80,17 +180,41 @@ function App() {
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
             placeholder="e.g., 90210"
-            disabled={loading}
+            disabled={loading || isScrapingInProgress}
           />
         </div>
-        <button 
-          onClick={handleSearch} 
-          disabled={loading || !searchQuery.trim()}
+        <button
+          onClick={handleSearch}
+          disabled={loading || isScrapingInProgress || !searchQuery.trim()}
           className="submit-btn"
         >
-          {loading ? 'Searching...' : 'Search Properties'}
+          {loading ? 'Checking...' : isScrapingInProgress ? 'Scraping...' : 'Search Properties'}
         </button>
       </div>
+
+      {isScrapingInProgress && (
+        <div className="progress-container">
+          <div className="progress-message">
+            <p><strong>Scraping in progress...</strong></p>
+            <p>{progressMessage}</p>
+            <div className="progress-bar">
+              <div className="progress-bar-fill"></div>
+            </div>
+            <p className="progress-note">
+              This may take a few minutes. Data is being collected and will be saved for future searches.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {cacheStatus && !cacheStatus.cached && !isScrapingInProgress && (
+        <div className="cache-status">
+          <p>No cached data found for this zip code. A new scrape will be started.</p>
+          {cacheStatus.csv_available && (
+            <p>CSV export will be available after scraping completes.</p>
+          )}
+        </div>
+      )}
     </>
   );
 
@@ -102,7 +226,7 @@ function App() {
         </button>
         <h1>Search Results ({searchResults.length} found)</h1>
       </div>
-      
+
       {searchResults.length > 0 ? (
         <div className="table-container">
           <table>
@@ -122,7 +246,7 @@ function App() {
             <tbody>
               {searchResults.map((property, index) => (
                 <tr key={index}>
-                  <td 
+                  <td
                     className="clickable-address"
                     onClick={() => handleAddressClick(property)}
                   >
@@ -131,8 +255,8 @@ function App() {
                   <td>{property["City"] || 'N/A'}</td>
                   <td>{property["State"] || 'N/A'}</td>
                   <td>{property["Zip"] || 'N/A'}</td>
-                  <td>{property["Owner First Name"] && property["Owner Last Name"] ? 
-                    `${property["Owner First Name"]} ${property["Owner Last Name"]}` : 
+                  <td>{property["Owner First Name"] && property["Owner Last Name"] ?
+                    `${property["Owner First Name"]} ${property["Owner Last Name"]}` :
                     property["Owner First Name"] || property["Owner Last Name"] || 'N/A'}
                   </td>
                   <td>{property["Est. Value"] !== "-" ? property["Est. Value"] : 'N/A'}</td>
@@ -237,14 +361,14 @@ function App() {
           </button>
           <h1>Property Details</h1>
         </div>
-        
+
         <div className="property-summary">
           <h3>{selectedProperty["Property Address"]}, {selectedProperty["City"]}, {selectedProperty["State"]} {selectedProperty["Zip"]}</h3>
           {selectedProperty["Est. Value"] !== "-" && (
             <p><strong>Estimated Value:</strong> {selectedProperty["Est. Value"]}</p>
           )}
         </div>
-        
+
         <div className="property-details">
           {sections.map((section, sectionIndex) => (
             <div key={sectionIndex} className="details-section">
