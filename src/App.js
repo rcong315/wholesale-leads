@@ -12,6 +12,9 @@ function App() {
   const [progressMessage, setProgressMessage] = useState('');
   const [isScrapingInProgress, setIsScrapingInProgress] = useState(false);
   const [cacheStatus, setCacheStatus] = useState(null);
+  const [streetViewImage, setStreetViewImage] = useState(null);
+  const [streetViewLoading, setStreetViewLoading] = useState(false);
+  const [streetViewError, setStreetViewError] = useState(null);
 
   const API_URL = process.env.REACT_APP_API_URL;
 
@@ -146,9 +149,39 @@ function App() {
     }
   };
 
+  const fetchStreetViewImage = async (address) => {
+    try {
+      setStreetViewLoading(true);
+      setStreetViewError(null);
+
+      const response = await axios.get(`${API_URL}/api/street-view/image`, {
+        params: { address },
+        responseType: 'blob'
+      });
+
+      // Create blob URL for the image
+      const imageBlob = new Blob([response.data], { type: 'image/jpeg' });
+      const imageUrl = URL.createObjectURL(imageBlob);
+      setStreetViewImage(imageUrl);
+    } catch (err) {
+      console.error('Error fetching street view image:', err);
+      setStreetViewError('Failed to load street view image');
+    } finally {
+      setStreetViewLoading(false);
+    }
+  };
+
   const handleAddressClick = (property) => {
     setSelectedProperty(property);
     setCurrentView('details');
+
+    // Clear previous street view data
+    setStreetViewImage(null);
+    setStreetViewError(null);
+
+    // Fetch street view image for the address
+    const address = `${property["Property Address"]}, ${property["City"]}, ${property["State"]} ${property["Zip"]}`;
+    fetchStreetViewImage(address);
   };
 
   const handleBackToSearch = () => {
@@ -165,6 +198,13 @@ function App() {
   const handleBackToResults = () => {
     setCurrentView('results');
     setSelectedProperty(null);
+
+    // Clean up street view image URL to prevent memory leaks
+    if (streetViewImage) {
+      URL.revokeObjectURL(streetViewImage);
+      setStreetViewImage(null);
+    }
+    setStreetViewError(null);
   };
 
   const renderSearchView = () => (
@@ -366,6 +406,29 @@ function App() {
           <h3>{selectedProperty["Property Address"]}, {selectedProperty["City"]}, {selectedProperty["State"]} {selectedProperty["Zip"]}</h3>
           {selectedProperty["Est. Value"] !== "-" && (
             <p><strong>Estimated Value:</strong> {selectedProperty["Est. Value"]}</p>
+          )}
+        </div>
+
+        <div className="street-view-section">
+          <h4>Street View</h4>
+          {streetViewLoading && (
+            <div className="street-view-loading">
+              <p>Loading street view image...</p>
+            </div>
+          )}
+          {streetViewError && (
+            <div className="street-view-error">
+              <p>{streetViewError}</p>
+            </div>
+          )}
+          {streetViewImage && !streetViewLoading && (
+            <div className="street-view-container">
+              <img
+                src={streetViewImage}
+                alt={`Street view of ${selectedProperty["Property Address"]}`}
+                className="street-view-image"
+              />
+            </div>
           )}
         </div>
 
