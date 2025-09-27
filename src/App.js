@@ -24,23 +24,23 @@ function App() {
     }
   };
 
-  const checkZipCodeStatus = async (zipCode) => {
+  const checkLocationStatus = async (location) => {
     try {
-      const response = await axios.get(`${API_URL}/api/status/${zipCode}`, axiosConfig);
+      const response = await axios.get(`${API_URL}/api/status/${location}`, axiosConfig);
       return response.data;
     } catch (err) {
-      console.error('Error checking zip code status:', err);
+      console.error('Error checking location status:', err);
       return null;
     }
   };
 
-  const pollProgress = async (zipCode) => {
+  const pollProgress = async (location) => {
     let attempts = 0;
     const maxAttempts = 1000;
 
     const poll = async () => {
       try {
-        const progressResponse = await axios.get(`${API_URL}/api/progress/${zipCode}`, axiosConfig);
+        const progressResponse = await axios.get(`${API_URL}/api/progress/${location}`, axiosConfig);
         const progressData = progressResponse.data;
 
         setProgressMessage(progressData.message || 'Processing...');
@@ -77,11 +77,11 @@ function App() {
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) {
-      setError('Please enter a zip code');
+      setError('Please enter a location');
       return;
     }
 
-    const zipCode = searchQuery.trim();
+    const location = searchQuery.trim();
 
     try {
       setLoading(true);
@@ -89,13 +89,13 @@ function App() {
       setProgressMessage('');
 
       // First, check the status to see if data exists or scraping is in progress
-      const status = await checkZipCodeStatus(zipCode);
+      const status = await checkLocationStatus(location);
       setCacheStatus(status);
 
       if (status && status.cached) {
         // Data is already cached, proceed with normal scrape request (it will return cached data)
         const response = await axios.post(
-          `${API_URL}/api/scrape/${zipCode}`,
+          `${API_URL}/api/scrape/${location}`,
           {},
           axiosConfig
         );
@@ -111,14 +111,14 @@ function App() {
         // Scraping is already in progress, start polling
         setIsScrapingInProgress(true);
         setProgressMessage(status.scraping_progress || 'Scraping in progress...');
-        pollProgress(zipCode);
+        pollProgress(location);
         setLoading(false);
         return;
       }
 
       // No cached data and not currently scraping, start new scrape
       const response = await axios.post(
-        `${API_URL}/api/scrape/${zipCode}`,
+        `${API_URL}/api/scrape/${location}`,
         {},
         axiosConfig
       );
@@ -127,7 +127,7 @@ function App() {
         // Scraping started, begin polling for progress
         setIsScrapingInProgress(true);
         setProgressMessage('Starting scrape...');
-        pollProgress(zipCode);
+        pollProgress(location);
       } else if (response.data.leads) {
         // Got results immediately (from cache)
         setSearchResults(response.data.leads);
@@ -212,14 +212,14 @@ function App() {
       <h1>Property Search</h1>
       <div className="controls">
         <div className="search-container">
-          <label htmlFor="search-input">Enter Zip Code:</label>
+          <label htmlFor="search-input">Enter Location:</label>
           <input
             id="search-input"
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-            placeholder="e.g., 90210"
+            placeholder="e.g., 90210 or Los Angeles"
             disabled={loading || isScrapingInProgress}
           />
         </div>
@@ -249,7 +249,7 @@ function App() {
 
       {cacheStatus && !cacheStatus.cached && !isScrapingInProgress && (
         <div className="cache-status">
-          <p>No cached data found for this zip code. A new scrape will be started.</p>
+          <p>No cached data found for this location. A new scrape will be started.</p>
           {cacheStatus.csv_available && (
             <p>CSV export will be available after scraping completes.</p>
           )}
@@ -310,7 +310,7 @@ function App() {
         </div>
       ) : (
         <div className="no-results">
-          <p>No properties found for your search. Try a different zip code.</p>
+          <p>No properties found for your search. Try a different location.</p>
         </div>
       )}
     </>
