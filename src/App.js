@@ -1,141 +1,105 @@
-import React, { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import './App.css';
 
+// Configurable filters - modify this object to change available filters
+const AVAILABLE_FILTERS = {
+  propertyType: {
+    label: 'Property Type',
+    type: 'select',
+    options: ['All', 'Single Family', 'Multi Family', 'Condo', 'Townhouse', 'Land']
+  },
+  city: {
+    label: 'City',
+    type: 'text',
+    placeholder: 'e.g., Los Angeles'
+  },
+  minValue: {
+    label: 'Min Value',
+    type: 'number',
+    placeholder: 'e.g., 100000'
+  },
+  maxValue: {
+    label: 'Max Value',
+    type: 'number',
+    placeholder: 'e.g., 500000'
+  },
+  bedrooms: {
+    label: 'Min Bedrooms',
+    type: 'number',
+    placeholder: 'e.g., 3'
+  },
+  bathrooms: {
+    label: 'Min Bathrooms',
+    type: 'number',
+    placeholder: 'e.g., 2'
+  }
+};
+
+// Configurable sorting options - modify this to change available sort options
+const SORT_OPTIONS = [
+  { value: '', label: 'Default' },
+  { value: 'value_asc', label: 'Value: Low to High' },
+  { value: 'value_desc', label: 'Value: High to Low' },
+  { value: 'bedrooms_desc', label: 'Bedrooms: High to Low' },
+  { value: 'bedrooms_asc', label: 'Bedrooms: Low to High' },
+  { value: 'bathrooms_desc', label: 'Bathrooms: High to Low' },
+  { value: 'bathrooms_asc', label: 'Bathrooms: Low to High' },
+  { value: 'city_asc', label: 'City: A to Z' },
+  { value: 'city_desc', label: 'City: Z to A' }
+];
+
 function App() {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
+  const [leads, setLeads] = useState([]);
   const [selectedProperty, setSelectedProperty] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [currentView, setCurrentView] = useState('search');
-  const [progressMessage, setProgressMessage] = useState('');
-  const [isScrapingInProgress, setIsScrapingInProgress] = useState(false);
-  const [cacheStatus, setCacheStatus] = useState(null);
+  const [currentView, setCurrentView] = useState('home');
   const [streetViewImage, setStreetViewImage] = useState(null);
   const [streetViewLoading, setStreetViewLoading] = useState(false);
   const [streetViewError, setStreetViewError] = useState(null);
+  const [streetViewDate, setStreetViewDate] = useState(null);
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalLeads, setTotalLeads] = useState(0);
+  const leadsPerPage = 50;
+
+  // Filter state - initialize from AVAILABLE_FILTERS
+  const [filters, setFilters] = useState({});
+
+  // Sorting state
+  const [sortBy, setSortBy] = useState('');
 
   const API_URL = process.env.REACT_APP_API_URL;
 
-  const axiosConfig = {
-    headers: {
-      'Content-Type': 'application/json'
-    }
-  };
-
-  const checkLocationStatus = async (location) => {
-    try {
-      const response = await axios.get(`${API_URL}/api/status/${location}`, axiosConfig);
-      return response.data;
-    } catch (err) {
-      console.error('Error checking location status:', err);
-      return null;
-    }
-  };
-
-  const pollProgress = async (location) => {
-    let attempts = 0;
-    const maxAttempts = 1000;
-
-    const poll = async () => {
-      try {
-        const progressResponse = await axios.get(`${API_URL}/api/progress/${location}`, axiosConfig);
-        const progressData = progressResponse.data;
-
-        setProgressMessage(progressData.message || 'Processing...');
-
-        if (progressData.status === 'completed' && progressData.result) {
-          setSearchResults(progressData.result.leads || []);
-          setCurrentView('results');
-          setIsScrapingInProgress(false);
-          setProgressMessage('');
-          return;
-        } else if (progressData.status === 'error') {
-          setError(progressData.message);
-          setIsScrapingInProgress(false);
-          setProgressMessage('');
-          return;
-        } else if (progressData.status === 'in_progress' && attempts < maxAttempts) {
-          attempts++;
-          setTimeout(poll, 3000); // Poll every 3 seconds
-        } else if (attempts >= maxAttempts) {
-          setError('Scraping is taking longer than expected. Please try again in a few minutes.');
-          setIsScrapingInProgress(false);
-          setProgressMessage('');
-        }
-      } catch (err) {
-        console.error('Error polling progress:', err);
-        setError('Error checking progress');
-        setIsScrapingInProgress(false);
-        setProgressMessage('');
-      }
-    };
-
-    poll();
-  };
-
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) {
-      setError('Please enter a location');
-      return;
-    }
-
-    const location = searchQuery.trim();
-
+  // Fetch leads from API with pagination, filters, and sorting
+  const fetchLeads = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      setProgressMessage('');
 
-      // First, check the status to see if data exists or scraping is in progress
-      const status = await checkLocationStatus(location);
-      setCacheStatus(status);
+      const offset = (currentPage - 1) * leadsPerPage;
+      const params = {
+        offset,
+        limit: leadsPerPage,
+        ...filters
+      };
 
-      if (status && status.cached) {
-        // Data is already cached, proceed with normal scrape request (it will return cached data)
-        const response = await axios.post(
-          `${API_URL}/api/scrape/${location}`,
-          {},
-          axiosConfig
-        );
-
-        const results = response.data.leads || [];
-        setSearchResults(results);
-        setCurrentView('results');
-        setLoading(false);
-        return;
+      // Add sorting parameter if set
+      if (sortBy) {
+        params.sortBy = sortBy;
       }
 
-      if (status && status.is_scraping) {
-        // Scraping is already in progress, start polling
-        setIsScrapingInProgress(true);
-        setProgressMessage(status.scraping_progress || 'Scraping in progress...');
-        pollProgress(location);
-        setLoading(false);
-        return;
-      }
+      const response = await axios.get(`${API_URL}/api/leads`, {
+        params,
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
 
-      // No cached data and not currently scraping, start new scrape
-      const response = await axios.post(
-        `${API_URL}/api/scrape/${location}`,
-        {},
-        axiosConfig
-      );
-
-      if (response.data.status === 'started') {
-        // Scraping started, begin polling for progress
-        setIsScrapingInProgress(true);
-        setProgressMessage('Starting scrape...');
-        pollProgress(location);
-      } else if (response.data.leads) {
-        // Got results immediately (from cache)
-        setSearchResults(response.data.leads);
-        setCurrentView('results');
-      } else {
-        setError('Unexpected response from server');
-      }
-
+      setLeads(response.data.leads || []);
+      setTotalLeads(response.data.total || 0);
     } catch (err) {
       if (err.response) {
         setError(`API Error: ${err.response.status} - ${err.response.data?.message || 'Unknown error'}`);
@@ -147,12 +111,44 @@ function App() {
     } finally {
       setLoading(false);
     }
+  }, [currentPage, filters, sortBy, API_URL, leadsPerPage]);
+
+  // Load leads on component mount and when page, filters, or sorting change
+  useEffect(() => {
+    if (currentView === 'home') {
+      fetchLeads();
+    }
+  }, [currentView, fetchLeads]);
+
+  const handleFilterChange = (filterKey, value) => {
+    setFilters(prev => ({
+      ...prev,
+      [filterKey]: value
+    }));
+    setCurrentPage(1); // Reset to first page when filters change
+  };
+
+  const handleClearFilters = () => {
+    setFilters({});
+    setSortBy('');
+    setCurrentPage(1);
+  };
+
+  const handleSortChange = (value) => {
+    setSortBy(value);
+    setCurrentPage(1); // Reset to first page when sorting changes
+  };
+
+  const handlePageChange = (newPage) => {
+    setCurrentPage(newPage);
+    window.scrollTo(0, 0);
   };
 
   const fetchStreetViewImage = async (address) => {
     try {
       setStreetViewLoading(true);
       setStreetViewError(null);
+      setStreetViewDate(null);
 
       const response = await axios.get(`${API_URL}/api/street-view/image`, {
         params: { address },
@@ -163,11 +159,36 @@ function App() {
       const imageBlob = new Blob([response.data], { type: 'image/jpeg' });
       const imageUrl = URL.createObjectURL(imageBlob);
       setStreetViewImage(imageUrl);
+
+      // Extract and format the image date from header
+      // Note: The backend must include 'X-Image-Date' in Access-Control-Expose-Headers for this to work
+      const imageDateHeader = response.headers['x-image-date'] || response.headers['X-Image-Date'];
+
+      if (imageDateHeader) {
+        const formattedDate = formatImageDate(imageDateHeader);
+        setStreetViewDate(formattedDate);
+      }
     } catch (err) {
       console.error('Error fetching street view image:', err);
       setStreetViewError('Failed to load street view image');
     } finally {
       setStreetViewLoading(false);
+    }
+  };
+
+  // Format YYYY-MM to "Month, YYYY"
+  const formatImageDate = (dateString) => {
+    try {
+      const [year, month] = dateString.split('-');
+      const monthNames = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+      ];
+      const monthIndex = parseInt(month, 10) - 1;
+      return `${monthNames[monthIndex]}, ${year}`;
+    } catch (err) {
+      console.error('Error formatting date:', err);
+      return null;
     }
   };
 
@@ -178,25 +199,15 @@ function App() {
     // Clear previous street view data
     setStreetViewImage(null);
     setStreetViewError(null);
+    setStreetViewDate(null);
 
     // Fetch street view image for the address
-    const address = `${property["Property Address"]}, ${property["City"]}, ${property["State"]} ${property["Zip"]}`;
+    const address = `${property["property_address"]}, ${property["city"]}, ${property["state"]} ${property["zip"]}`;
     fetchStreetViewImage(address);
   };
 
-  const handleBackToSearch = () => {
-    setCurrentView('search');
-    setSearchQuery('');
-    setSearchResults([]);
-    setSelectedProperty(null);
-    setError(null);
-    setProgressMessage('');
-    setIsScrapingInProgress(false);
-    setCacheStatus(null);
-  };
-
-  const handleBackToResults = () => {
-    setCurrentView('results');
+  const handleBackToHome = () => {
+    setCurrentView('home');
     setSelectedProperty(null);
 
     // Clean up street view image URL to prevent memory leaks
@@ -205,116 +216,187 @@ function App() {
       setStreetViewImage(null);
     }
     setStreetViewError(null);
+    setStreetViewDate(null);
   };
 
-  const renderSearchView = () => (
-    <>
-      <h1>Property Search</h1>
-      <div className="controls">
-        <div className="search-container">
-          <label htmlFor="search-input">Enter Location:</label>
-          <input
-            id="search-input"
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-            placeholder="e.g., 90210 or Los Angeles"
-            disabled={loading || isScrapingInProgress}
-          />
-        </div>
-        <button
-          onClick={handleSearch}
-          disabled={loading || isScrapingInProgress || !searchQuery.trim()}
-          className="submit-btn"
-        >
-          {loading ? 'Checking...' : isScrapingInProgress ? 'Scraping...' : 'Search Properties'}
-        </button>
-      </div>
+  const renderHomeView = () => {
+    const totalPages = Math.ceil(totalLeads / leadsPerPage);
+    const startIndex = (currentPage - 1) * leadsPerPage + 1;
+    const endIndex = Math.min(currentPage * leadsPerPage, totalLeads);
 
-      {isScrapingInProgress && (
-        <div className="progress-container">
-          <div className="progress-message">
-            <p><strong>Scraping in progress...</strong></p>
-            <p>{progressMessage}</p>
-            <div className="progress-bar">
-              <div className="progress-bar-fill"></div>
+    return (
+      <>
+        <h1>Wholesale Leads ({totalLeads} total)</h1>
+
+        {/* Filters and Sorting Section */}
+        <div className="filters-section">
+          <div className="filters-header">
+            <h3>Filters & Sorting</h3>
+            <div className="sort-controls">
+              <label htmlFor="sort-select">Sort by:</label>
+              <select
+                id="sort-select"
+                value={sortBy}
+                onChange={(e) => handleSortChange(e.target.value)}
+                className="sort-select"
+              >
+                {SORT_OPTIONS.map(option => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </div>
-            <p className="progress-note">
-              This may take a few minutes. Data is being collected and will be saved for future searches.
-            </p>
+          </div>
+
+          <div className="filters-grid">
+            {Object.entries(AVAILABLE_FILTERS).map(([key, config]) => (
+              <div key={key} className="filter-item">
+                <label htmlFor={`filter-${key}`}>{config.label}:</label>
+                {config.type === 'select' ? (
+                  <select
+                    id={`filter-${key}`}
+                    value={filters[key] || 'All'}
+                    onChange={(e) => handleFilterChange(key, e.target.value === 'All' ? '' : e.target.value)}
+                  >
+                    {config.options.map(option => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    id={`filter-${key}`}
+                    type={config.type}
+                    placeholder={config.placeholder}
+                    value={filters[key] || ''}
+                    onChange={(e) => handleFilterChange(key, e.target.value)}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="filter-actions">
+            <button onClick={handleClearFilters} className="clear-filters-btn">
+              Clear All Filters & Sorting
+            </button>
           </div>
         </div>
-      )}
 
-      {cacheStatus && !cacheStatus.cached && !isScrapingInProgress && (
-        <div className="cache-status">
-          <p>No cached data found for this location. A new scrape will be started.</p>
-          {cacheStatus.csv_available && (
-            <p>CSV export will be available after scraping completes.</p>
-          )}
-        </div>
-      )}
-    </>
-  );
+        {loading && (
+          <div className="loading-message">
+            <p>Loading leads...</p>
+          </div>
+        )}
 
-  const renderResultsView = () => (
-    <>
-      <div className="header-with-back">
-        <button onClick={handleBackToSearch} className="back-btn">
-          ← Back to Search
-        </button>
-        <h1>Search Results ({searchResults.length} found)</h1>
-      </div>
+        {!loading && leads.length > 0 && (
+          <>
+            <div className="results-info">
+              <p>Showing {startIndex} - {endIndex} of {totalLeads} leads (Page {currentPage} of {totalPages})</p>
+            </div>
 
-      {searchResults.length > 0 ? (
-        <div className="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th>Address</th>
-                <th>City</th>
-                <th>State</th>
-                <th>Zip</th>
-                <th>Owner Name</th>
-                <th>Estimated Value</th>
-                <th>Property Type</th>
-                <th>Bedrooms</th>
-                <th>Bathrooms</th>
-              </tr>
-            </thead>
-            <tbody>
-              {searchResults.map((property, index) => (
-                <tr key={index}>
-                  <td
-                    className="clickable-address"
-                    onClick={() => handleAddressClick(property)}
-                  >
-                    {property["Property Address"] || 'N/A'}
-                  </td>
-                  <td>{property["City"] || 'N/A'}</td>
-                  <td>{property["State"] || 'N/A'}</td>
-                  <td>{property["Zip"] || 'N/A'}</td>
-                  <td>{property["Owner First Name"] && property["Owner Last Name"] ?
-                    `${property["Owner First Name"]} ${property["Owner Last Name"]}` :
-                    property["Owner First Name"] || property["Owner Last Name"] || 'N/A'}
-                  </td>
-                  <td>{property["Est. Value"] !== "-" ? property["Est. Value"] : 'N/A'}</td>
-                  <td>{property["Property Type"] !== "-" ? property["Property Type"] : 'N/A'}</td>
-                  <td>{property["Bedrooms"] !== "-" ? property["Bedrooms"] : 'N/A'}</td>
-                  <td>{property["Bathrooms"] !== "-" ? property["Bathrooms"] : 'N/A'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="no-results">
-          <p>No properties found for your search. Try a different location.</p>
-        </div>
-      )}
-    </>
-  );
+            <div className="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Address</th>
+                    <th>City</th>
+                    <th>State</th>
+                    <th>Zip</th>
+                    <th>Owner Name</th>
+                    <th>Estimated Value</th>
+                    <th>Property Type</th>
+                    <th>Bedrooms</th>
+                    <th>Bathrooms</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {leads.map((property, index) => (
+                    <tr key={index}>
+                      <td
+                        className="clickable-address"
+                        onClick={() => handleAddressClick(property)}
+                      >
+                        {property["property_address"] || 'N/A'}
+                      </td>
+                      <td>{property["city"] || 'N/A'}</td>
+                      <td>{property["state"] || 'N/A'}</td>
+                      <td>{property["zip"] || 'N/A'}</td>
+                      <td>{property["owner_first_name"] && property["owner_last_name"] ?
+                        `${property["owner_first_name"]} ${property["owner_last_name"]}` :
+                        property["owner_first_name"] || property["owner_last_name"] || 'N/A'}
+                      </td>
+                      <td>{property["est_value"] !== "-" ? property["est_value"] : 'N/A'}</td>
+                      <td>{property["property_type"] !== "-" ? property["property_type"] : 'N/A'}</td>
+                      <td>{property["bedrooms"] !== "-" ? property["bedrooms"] : 'N/A'}</td>
+                      <td>{property["bathrooms"] !== "-" ? property["bathrooms"] : 'N/A'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination Controls */}
+            <div className="pagination">
+              <button
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+                className="pagination-btn"
+              >
+                Previous
+              </button>
+
+              <div className="page-numbers">
+                {currentPage > 2 && (
+                  <>
+                    <button onClick={() => handlePageChange(1)} className="page-number">1</button>
+                    {currentPage > 3 && <span className="pagination-ellipsis">...</span>}
+                  </>
+                )}
+
+                {currentPage > 1 && (
+                  <button onClick={() => handlePageChange(currentPage - 1)} className="page-number">
+                    {currentPage - 1}
+                  </button>
+                )}
+
+                <button className="page-number active">{currentPage}</button>
+
+                {currentPage < totalPages && (
+                  <button onClick={() => handlePageChange(currentPage + 1)} className="page-number">
+                    {currentPage + 1}
+                  </button>
+                )}
+
+                {currentPage < totalPages - 1 && (
+                  <>
+                    {currentPage < totalPages - 2 && <span className="pagination-ellipsis">...</span>}
+                    <button onClick={() => handlePageChange(totalPages)} className="page-number">
+                      {totalPages}
+                    </button>
+                  </>
+                )}
+              </div>
+
+              <button
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                className="pagination-btn"
+              >
+                Next
+              </button>
+            </div>
+          </>
+        )}
+
+        {!loading && leads.length === 0 && (
+          <div className="no-results">
+            <p>No leads found. Try adjusting your filters.</p>
+          </div>
+        )}
+      </>
+    );
+  };
+
 
   const renderDetailsView = () => {
     if (!selectedProperty) return null;
@@ -328,55 +410,55 @@ function App() {
       {
         title: 'Property Information',
         fields: [
-          { label: 'Address', key: 'Property Address' },
-          { label: 'City', key: 'City' },
-          { label: 'State', key: 'State' },
-          { label: 'Zip Code', key: 'Zip' },
-          { label: 'County', key: 'County' },
-          { label: 'Property Type', key: 'Property Type' },
-          { label: 'APN', key: 'APN' }
+          { label: 'Address', key: 'property_address' },
+          { label: 'City', key: 'city' },
+          { label: 'State', key: 'state' },
+          { label: 'Zip Code', key: 'zip' },
+          { label: 'County', key: 'county' },
+          { label: 'Property Type', key: 'property_type' },
+          { label: 'APN', key: 'apn' }
         ]
       },
       {
         title: 'Owner Information',
         fields: [
-          { label: 'Owner First Name', key: 'Owner First Name' },
-          { label: 'Owner Last Name', key: 'Owner Last Name' },
-          { label: 'Phone Numbers', key: 'Phone Numbers' },
-          { label: 'Emails', key: 'Emails' },
-          { label: 'Owner Occupied', key: 'Owner Occupied' }
+          { label: 'Owner First Name', key: 'owner_first_name' },
+          { label: 'Owner Last Name', key: 'owner_last_name' },
+          { label: 'Phone Numbers', key: 'phone_numbers' },
+          { label: 'Emails', key: 'emails' },
+          { label: 'Owner Occupied', key: 'owner_occupied' }
         ]
       },
       {
         title: 'Mailing Address',
         fields: [
-          { label: 'Mailing Address', key: 'Mailing Address' },
-          { label: 'Mailing City', key: 'Mailing City' },
-          { label: 'Mailing State', key: 'Mailing State' },
-          { label: 'Mailing Zip Code', key: 'Mailing Zip Code' },
-          { label: 'Mailing County', key: 'Mailing County' }
+          { label: 'Mailing Address', key: 'mailing_address' },
+          { label: 'Mailing City', key: 'mailing_city' },
+          { label: 'Mailing State', key: 'mailing_state' },
+          { label: 'Mailing Zip Code', key: 'mailing_zip' },
+          { label: 'Mailing County', key: 'mailing_county' }
         ]
       },
       {
         title: 'Property Details',
         fields: [
-          { label: 'Bedrooms', key: 'Bedrooms' },
-          { label: 'Bathrooms', key: 'Bathrooms' },
-          { label: 'Property Sqft', key: 'Property Sqft' },
-          { label: 'Lot Size', key: 'Lot Size' },
-          { label: 'Year Built', key: 'Year Build' }
+          { label: 'Bedrooms', key: 'bedrooms' },
+          { label: 'Bathrooms', key: 'bathrooms' },
+          { label: 'Property Sqft', key: 'property_sqft' },
+          { label: 'Lot Size', key: 'lot_size' },
+          { label: 'Year Built', key: 'year_build' }
         ]
       },
       {
         title: 'Financial Information',
         fields: [
-          { label: 'Estimated Value', key: 'Est. Value' },
-          { label: 'Assessed Value', key: 'Assessed Value' },
-          { label: 'Last Sale Date', key: 'Last Sale Date' },
-          { label: 'Last Sale Amount', key: 'Last Sale Amount' },
-          { label: 'Total Loan Balance', key: 'Total Loan Balance' },
-          { label: 'Estimated Equity', key: 'Est. Equity' },
-          { label: 'Estimated LTV', key: 'Est. LTV' }
+          { label: 'Estimated Value', key: 'est_value' },
+          { label: 'Assessed Value', key: 'assessed_value' },
+          { label: 'Last Sale Date', key: 'last_sale_date' },
+          { label: 'Last Sale Amount', key: 'last_sale_amount' },
+          { label: 'Total Loan Balance', key: 'total_loan_balance' },
+          { label: 'Estimated Equity', key: 'est_equity' },
+          { label: 'Estimated LTV', key: 'est_ltv' }
         ]
       },
       {
@@ -396,16 +478,16 @@ function App() {
     return (
       <>
         <div className="header-with-back">
-          <button onClick={handleBackToResults} className="back-btn">
-            ← Back to Results
+          <button onClick={handleBackToHome} className="back-btn">
+            ← Back to Leads
           </button>
           <h1>Property Details</h1>
         </div>
 
         <div className="property-summary">
-          <h3>{selectedProperty["Property Address"]}, {selectedProperty["City"]}, {selectedProperty["State"]} {selectedProperty["Zip"]}</h3>
-          {selectedProperty["Est. Value"] !== "-" && (
-            <p><strong>Estimated Value:</strong> {selectedProperty["Est. Value"]}</p>
+          <h3>{selectedProperty["property_address"]}, {selectedProperty["city"]}, {selectedProperty["state"]} {selectedProperty["zip"]}</h3>
+          {selectedProperty["est_value"] !== "-" && (
+            <p><strong>Estimated Value:</strong> {selectedProperty["est_value"]}</p>
           )}
         </div>
 
@@ -425,9 +507,12 @@ function App() {
             <div className="street-view-container">
               <img
                 src={streetViewImage}
-                alt={`Street view of ${selectedProperty["Property Address"]}`}
+                alt={`Street view of ${selectedProperty["property_address"]}`}
                 className="street-view-image"
               />
+              {streetViewDate && (
+                <p className="street-view-date">Image taken: {streetViewDate}</p>
+              )}
             </div>
           )}
         </div>
@@ -454,8 +539,7 @@ function App() {
   return (
     <div className="App">
       <div className="container">
-        {currentView === 'search' && renderSearchView()}
-        {currentView === 'results' && renderResultsView()}
+        {currentView === 'home' && renderHomeView()}
         {currentView === 'details' && renderDetailsView()}
 
         {error && (
