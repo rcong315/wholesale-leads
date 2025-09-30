@@ -1,0 +1,4 @@
+services:
+  - type: pserv
+    runtime: python
+    name: wholesale-leads-client
