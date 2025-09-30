@@ -80,19 +80,28 @@ function App() {
       setError(null);
 
       const offset = (currentPage - 1) * leadsPerPage;
-      const params = {
+
+      // Build filters dict (remove empty values)
+      const filtersDict = Object.entries(filters)
+        .filter(([_, value]) => value !== '' && value !== null && value !== undefined)
+        .reduce((acc, [key, value]) => {
+          acc[key] = value;
+          return acc;
+        }, {});
+
+      // Build request body
+      const body = {
+        filters: filtersDict,
         offset,
-        limit: leadsPerPage,
-        ...filters
+        limit: leadsPerPage
       };
 
       // Add sorting parameter if set
       if (sortBy) {
-        params.sortBy = sortBy;
+        body.sortBy = sortBy;
       }
 
-      const response = await axios.get(`${API_URL}/api/leads`, {
-        params,
+      const response = await axios.post(`${API_URL}/api/leads`, body, {
         headers: {
           'Content-Type': 'application/json'
         }
