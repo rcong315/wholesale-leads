@@ -24,15 +24,60 @@ const AVAILABLE_FILTERS = {
     type: 'number',
     placeholder: 'e.g., 500000'
   },
-  bedrooms: {
-    label: 'Min Bedrooms',
+  minSaleAmount: {
+    label: 'Min Last Sale Amount',
+    type: 'number',
+    placeholder: 'e.g., 100000'
+  },
+  maxSaleAmount: {
+    label: 'Max Last Sale Amount',
+    type: 'number',
+    placeholder: 'e.g., 500000'
+  },
+  minLoanBalance: {
+    label: 'Min Loan Balance',
+    type: 'number',
+    placeholder: 'e.g., 50000'
+  },
+  maxLoanBalance: {
+    label: 'Max Loan Balance',
+    type: 'number',
+    placeholder: 'e.g., 300000'
+  },
+  minInterestRate: {
+    label: 'Min Interest Rate (%)',
     type: 'number',
     placeholder: 'e.g., 3'
   },
-  bathrooms: {
-    label: 'Min Bathrooms',
+  maxInterestRate: {
+    label: 'Max Interest Rate (%)',
     type: 'number',
-    placeholder: 'e.g., 2'
+    placeholder: 'e.g., 7'
+  },
+  mlsStatus: {
+    label: 'MLS Status',
+    type: 'text',
+    placeholder: 'e.g., Active'
+  },
+  probate: {
+    label: 'Probate',
+    type: 'select',
+    options: ['All', 'Yes', 'No']
+  },
+  liens: {
+    label: 'Liens',
+    type: 'select',
+    options: ['All', 'Yes', 'No']
+  },
+  preForeclosure: {
+    label: 'Pre-Foreclosure',
+    type: 'select',
+    options: ['All', 'Yes', 'No']
+  },
+  taxes: {
+    label: 'Taxes Status',
+    type: 'text',
+    placeholder: 'e.g., Current'
   }
 };
 
@@ -41,12 +86,16 @@ const SORT_OPTIONS = [
   { value: '', label: 'Default' },
   { value: 'value_asc', label: 'Value: Low to High' },
   { value: 'value_desc', label: 'Value: High to Low' },
-  { value: 'bedrooms_desc', label: 'Bedrooms: High to Low' },
-  { value: 'bedrooms_asc', label: 'Bedrooms: Low to High' },
-  { value: 'bathrooms_desc', label: 'Bathrooms: High to Low' },
-  { value: 'bathrooms_asc', label: 'Bathrooms: Low to High' },
   { value: 'city_asc', label: 'City: A to Z' },
-  { value: 'city_desc', label: 'City: Z to A' }
+  { value: 'city_desc', label: 'City: Z to A' },
+  { value: 'last_sale_date_desc', label: 'Last Sale Date: Newest First' },
+  { value: 'last_sale_date_asc', label: 'Last Sale Date: Oldest First' },
+  { value: 'last_sale_amount_desc', label: 'Last Sale Amount: High to Low' },
+  { value: 'last_sale_amount_asc', label: 'Last Sale Amount: Low to High' },
+  { value: 'loan_balance_desc', label: 'Loan Balance: High to Low' },
+  { value: 'loan_balance_asc', label: 'Loan Balance: Low to High' },
+  { value: 'interest_rate_desc', label: 'Interest Rate: High to Low' },
+  { value: 'interest_rate_asc', label: 'Interest Rate: Low to High' }
 ];
 
 function App() {
@@ -309,13 +358,17 @@ function App() {
                   <tr>
                     <th>Address</th>
                     <th>City</th>
-                    <th>State</th>
-                    <th>Zip</th>
-                    <th>Owner Name</th>
                     <th>Estimated Value</th>
                     <th>Property Type</th>
-                    <th>Bedrooms</th>
-                    <th>Bathrooms</th>
+                    <th>Last Sale Date</th>
+                    <th>Last Sale Amount</th>
+                    <th>Total Loan Balance</th>
+                    <th>MLS Status</th>
+                    <th>Probate</th>
+                    <th>Liens</th>
+                    <th>Pre-Foreclosure</th>
+                    <th>Taxes</th>
+                    <th>Loan Interest Rate</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -328,16 +381,17 @@ function App() {
                         {property["property_address"] || 'N/A'}
                       </td>
                       <td>{property["city"] || 'N/A'}</td>
-                      <td>{property["state"] || 'N/A'}</td>
-                      <td>{property["zip"] || 'N/A'}</td>
-                      <td>{property["owner_first_name"] && property["owner_last_name"] ?
-                        `${property["owner_first_name"]} ${property["owner_last_name"]}` :
-                        property["owner_first_name"] || property["owner_last_name"] || 'N/A'}
-                      </td>
                       <td>{property["est_value"] !== "-" ? property["est_value"] : 'N/A'}</td>
                       <td>{property["property_type"] !== "-" ? property["property_type"] : 'N/A'}</td>
-                      <td>{property["bedrooms"] !== "-" ? property["bedrooms"] : 'N/A'}</td>
-                      <td>{property["bathrooms"] !== "-" ? property["bathrooms"] : 'N/A'}</td>
+                      <td>{property["last_sale_date"] !== "-" ? property["last_sale_date"] : 'N/A'}</td>
+                      <td>{property["last_sale_amount"] !== "-" ? property["last_sale_amount"] : 'N/A'}</td>
+                      <td>{property["total_loan_balance"] !== "-" ? property["total_loan_balance"] : 'N/A'}</td>
+                      <td>{property["mls_status"] !== "-" ? property["mls_status"] : 'N/A'}</td>
+                      <td>{property["probate"] !== "-" ? property["probate"] : 'N/A'}</td>
+                      <td>{property["liens"] !== "-" ? property["liens"] : 'N/A'}</td>
+                      <td>{property["pre_foreclosure"] !== "-" ? property["pre_foreclosure"] : 'N/A'}</td>
+                      <td>{property["taxes"] !== "-" ? property["taxes"] : 'N/A'}</td>
+                      <td>{property["loan_interest_rate"] !== "-" ? property["loan_interest_rate"] : 'N/A'}</td>
                     </tr>
                   ))}
                 </tbody>
