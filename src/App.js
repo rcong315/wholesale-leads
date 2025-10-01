@@ -56,28 +56,28 @@ const AVAILABLE_FILTERS = {
   },
   mlsStatus: {
     label: 'MLS Status',
-    type: 'text',
-    placeholder: 'e.g., Active'
+    type: 'select',
+    options: [] // Will be populated from server
   },
   probate: {
     label: 'Probate',
     type: 'select',
-    options: ['All', 'Yes', 'No']
+    options: [] // Will be populated from server
   },
   liens: {
     label: 'Liens',
     type: 'select',
-    options: ['All', 'Yes', 'No']
+    options: [] // Will be populated from server
   },
   preForeclosure: {
     label: 'Pre-Foreclosure',
     type: 'select',
-    options: ['All', 'Yes', 'No']
+    options: [] // Will be populated from server
   },
   taxes: {
-    label: 'Taxes Status',
-    type: 'text',
-    placeholder: 'e.g., Current'
+    label: 'Taxes',
+    type: 'select',
+    options: [] // Will be populated from server
   }
 };
 
@@ -120,7 +120,31 @@ function App() {
   // Sorting state
   const [sortBy, setSortBy] = useState('');
 
+  // Filter options from server
+  const [filterOptions, setFilterOptions] = useState({
+    cities: [],
+    mlsStatuses: [],
+    probateValues: [],
+    liensValues: [],
+    preForeclosureValues: [],
+    taxesValues: []
+  });
+
   const API_URL = process.env.REACT_APP_API_URL;
+
+  // Fetch filter options on component mount
+  useEffect(() => {
+    const fetchFilterOptions = async () => {
+      try {
+        const response = await axios.get(`${API_URL}/api/filter-options`);
+        setFilterOptions(response.data);
+      } catch (err) {
+        console.error('Failed to fetch filter options:', err);
+      }
+    };
+
+    fetchFilterOptions();
+  }, [API_URL]);
 
   // Fetch leads from API with pagination, filters, and sorting
   const fetchLeads = useCallback(async () => {
@@ -308,30 +332,57 @@ function App() {
           </div>
 
           <div className="filters-grid">
-            {Object.entries(AVAILABLE_FILTERS).map(([key, config]) => (
-              <div key={key} className="filter-item">
-                <label htmlFor={`filter-${key}`}>{config.label}:</label>
-                {config.type === 'select' ? (
-                  <select
-                    id={`filter-${key}`}
-                    value={filters[key] || 'All'}
-                    onChange={(e) => handleFilterChange(key, e.target.value === 'All' ? '' : e.target.value)}
-                  >
-                    {config.options.map(option => (
-                      <option key={option} value={option}>{option}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    id={`filter-${key}`}
-                    type={config.type}
-                    placeholder={config.placeholder}
-                    value={filters[key] || ''}
-                    onChange={(e) => handleFilterChange(key, e.target.value)}
-                  />
-                )}
-              </div>
-            ))}
+            {Object.entries(AVAILABLE_FILTERS).map(([key, config]) => {
+              // Get dynamic options based on filter key
+              let options = config.options || [];
+              if (key === 'probate') options = filterOptions.probateValues;
+              else if (key === 'liens') options = filterOptions.liensValues;
+              else if (key === 'preForeclosure') options = filterOptions.preForeclosureValues;
+              else if (key === 'taxes') options = filterOptions.taxesValues;
+              else if (key === 'mlsStatus') options = filterOptions.mlsStatuses;
+
+              return (
+                <div key={key} className="filter-item">
+                  <label htmlFor={`filter-${key}`}>{config.label}:</label>
+                  {config.type === 'select' ? (
+                    <select
+                      id={`filter-${key}`}
+                      value={filters[key] || ''}
+                      onChange={(e) => handleFilterChange(key, e.target.value)}
+                    >
+                      <option value="">All</option>
+                      {options.map(option => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  ) : key === 'city' ? (
+                    <>
+                      <input
+                        id={`filter-${key}`}
+                        type="text"
+                        list="city-options"
+                        placeholder={config.placeholder}
+                        value={filters[key] || ''}
+                        onChange={(e) => handleFilterChange(key, e.target.value)}
+                      />
+                      <datalist id="city-options">
+                        {filterOptions.cities.map(city => (
+                          <option key={city} value={city} />
+                        ))}
+                      </datalist>
+                    </>
+                  ) : (
+                    <input
+                      id={`filter-${key}`}
+                      type={config.type}
+                      placeholder={config.placeholder}
+                      value={filters[key] || ''}
+                      onChange={(e) => handleFilterChange(key, e.target.value)}
+                    />
+                  )}
+                </div>
+              );
+            })}
           </div>
           <div className="filter-actions">
             <button onClick={handleClearFilters} className="clear-filters-btn">
