@@ -4,7 +4,7 @@
 }
 
 .container {
-  max-width: 1200px;
+  max-width: 1600px;
   margin: 0 auto;
   background: white;
   padding: 30px;
@@ -112,6 +112,28 @@ h1 {
 
 .back-btn:hover {
   background-color: #e9e9e9;
+}
+
+.save-btn {
+  padding: 10px 24px;
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  margin-left: auto;
+}
+
+.save-btn:hover:not(:disabled) {
+  background-color: #45a049;
+}
+
+.save-btn:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
 }
 
 .clickable-address {
@@ -227,6 +249,26 @@ tbody tr:last-child td {
   word-wrap: break-word;
 }
 
+.editable-input {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  background: white;
+  transition: all 0.3s;
+  width: 100%;
+}
+
+.editable-input:focus {
+  outline: none;
+  border-color: #4CAF50;
+  box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+}
+
+.editable-input:hover {
+  border-color: #4CAF50;
+}
+
 .no-results {
   text-align: center;
   padding: 40px 20px;
@@ -317,7 +359,8 @@ tbody tr:last-child td {
   font-size: 14px;
 }
 
-.filter-item input,
+.filter-item input[type="text"],
+.filter-item input[type="number"],
 .filter-item select {
   padding: 8px 12px;
   border: 1px solid #ddd;
@@ -327,11 +370,19 @@ tbody tr:last-child td {
   transition: border-color 0.3s;
 }
 
-.filter-item input:focus,
+.filter-item input[type="text"]:focus,
+.filter-item input[type="number"]:focus,
 .filter-item select:focus {
   outline: none;
   border-color: #4CAF50;
   box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+}
+
+.filter-checkbox {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  accent-color: #4CAF50;
 }
 
 .filter-actions {
@@ -504,6 +555,36 @@ tbody tr:last-child td {
   color: #666;
   font-size: 14px;
   font-style: italic;
+}
+
+/* Favorite Star Button */
+.favorite-star {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+  transition: transform 0.2s, color 0.2s;
+  color: #ccc;
+}
+
+.favorite-star:hover {
+  transform: scale(1.2);
+}
+
+.favorite-star.favorited {
+  color: #ffd700;
+}
+
+.favorite-star.favorited:hover {
+  color: #ffed4e;
+}
+
+.favorite-badge {
+  color: #ffd700;
+  font-size: 18px;
+  margin-left: 10px;
 }
 
 /* Responsive design */

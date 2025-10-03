@@ -4,6 +4,10 @@ import './App.css';
 
 // Configurable filters - modify this object to change available filters
 const AVAILABLE_FILTERS = {
+  isFavorite: {
+    label: 'Favorites Only',
+    type: 'checkbox'
+  },
   propertyType: {
     label: 'Property Type',
     type: 'select',
@@ -108,6 +112,8 @@ function App() {
   const [streetViewLoading, setStreetViewLoading] = useState(false);
   const [streetViewError, setStreetViewError] = useState(null);
   const [streetViewDate, setStreetViewDate] = useState(null);
+  const [editedProperty, setEditedProperty] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -226,6 +232,36 @@ function App() {
     window.scrollTo(0, 0);
   };
 
+  const handleToggleFavorite = async (leadId, currentIsFavorite) => {
+    try {
+      const newFavoriteStatus = !currentIsFavorite;
+
+      const response = await axios.patch(
+        `${API_URL}/api/leads/${leadId}/favorite`,
+        newFavoriteStatus,
+        {
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      if (response.data.success) {
+        // Update the lead in the current list
+        setLeads(prevLeads =>
+          prevLeads.map(lead =>
+            lead.id === leadId
+              ? { ...lead, is_favorite: newFavoriteStatus ? 1 : 0 }
+              : lead
+          )
+        );
+      }
+    } catch (err) {
+      console.error('Error toggling favorite:', err);
+      setError('Failed to toggle favorite: ' + (err.response?.data?.detail || err.message));
+    }
+  };
+
   const fetchStreetViewImage = async (address) => {
     try {
       setStreetViewLoading(true);
@@ -276,6 +312,7 @@ function App() {
 
   const handleAddressClick = (property) => {
     setSelectedProperty(property);
+    setEditedProperty({ ...property });
     setCurrentView('details');
 
     // Clear previous street view data
@@ -291,6 +328,7 @@ function App() {
   const handleBackToHome = () => {
     setCurrentView('home');
     setSelectedProperty(null);
+    setEditedProperty(null);
 
     // Clean up street view image URL to prevent memory leaks
     if (streetViewImage) {
@@ -299,6 +337,50 @@ function App() {
     }
     setStreetViewError(null);
     setStreetViewDate(null);
+  };
+
+  const handleFieldChange = (fieldKey, value) => {
+    setEditedProperty(prev => ({
+      ...prev,
+      [fieldKey]: value
+    }));
+  };
+
+  const handleSave = async () => {
+    if (!editedProperty || !editedProperty.id) return;
+
+    try {
+      setIsSaving(true);
+      setError(null);
+
+      const response = await axios.put(
+        `${API_URL}/api/leads/${editedProperty.id}`,
+        editedProperty,
+        {
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      if (response.data.success) {
+        const updatedLead = response.data.lead;
+        setSelectedProperty(updatedLead);
+        setEditedProperty(updatedLead);
+
+        // Show success message based on favorite status
+        const wasFavorited = editedProperty.is_favorite !== 1 && updatedLead.is_favorite === 1;
+        const message = wasFavorited
+          ? 'Lead saved and marked as favorite!'
+          : 'Lead saved successfully!';
+        alert(message);
+      }
+    } catch (err) {
+      console.error('Error saving lead:', err);
+      setError('Failed to save lead: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const renderHomeView = () => {
@@ -344,7 +426,15 @@ function App() {
               return (
                 <div key={key} className="filter-item">
                   <label htmlFor={`filter-${key}`}>{config.label}:</label>
-                  {config.type === 'select' ? (
+                  {config.type === 'checkbox' ? (
+                    <input
+                      id={`filter-${key}`}
+                      type="checkbox"
+                      checked={filters[key] || false}
+                      onChange={(e) => handleFilterChange(key, e.target.checked)}
+                      className="filter-checkbox"
+                    />
+                  ) : config.type === 'select' ? (
                     <select
                       id={`filter-${key}`}
                       value={filters[key] || ''}
@@ -407,6 +497,7 @@ function App() {
               <table>
                 <thead>
                   <tr>
+                    <th>Favorite</th>
                     <th>Address</th>
                     <th>City</th>
                     <th>Estimated Value</th>
@@ -425,6 +516,18 @@ function App() {
                 <tbody>
                   {leads.map((property, index) => (
                     <tr key={index}>
+                      <td>
+                        <button
+                          className={`favorite-star ${property.is_favorite === 1 ? 'favorited' : ''}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleFavorite(property.id, property.is_favorite === 1);
+                          }}
+                          title={property.is_favorite === 1 ? 'Favorited' : 'Click to favorite'}
+                        >
+                          {property.is_favorite === 1 ? '★' : '☆'}
+                        </button>
+                      </td>
                       <td
                         className="clickable-address"
                         onClick={() => handleAddressClick(property)}
@@ -513,10 +616,10 @@ function App() {
 
 
   const renderDetailsView = () => {
-    if (!selectedProperty) return null;
+    if (!selectedProperty || !editedProperty) return null;
 
     const formatValue = (value) => {
-      if (!value || value === "-" || value === "") return 'N/A';
+      if (!value || value === "-" || value === "") return '';
       return String(value);
     };
 
@@ -578,13 +681,13 @@ function App() {
       {
         title: 'Status Information',
         fields: [
-          { label: 'Vacancy', key: 'Vacancy' },
-          { label: 'MLS Status', key: 'MLS Status' },
-          { label: 'Probate', key: 'Probate' },
-          { label: 'Liens', key: 'Liens' },
-          { label: 'Pre-Foreclosure', key: 'Pre-Foreclosure' },
-          { label: 'Taxes', key: 'Taxes' },
-          { label: 'Vacant', key: 'Vacant' }
+          { label: 'Vacancy', key: 'vacancy' },
+          { label: 'MLS Status', key: 'mls_status' },
+          { label: 'Probate', key: 'probate' },
+          { label: 'Liens', key: 'liens' },
+          { label: 'Pre-Foreclosure', key: 'pre_foreclosure' },
+          { label: 'Taxes', key: 'taxes' },
+          { label: 'Vacant', key: 'vacant' }
         ]
       }
     ];
@@ -596,10 +699,20 @@ function App() {
             ← Back to Leads
           </button>
           <h1>Property Details</h1>
+          <button
+            onClick={handleSave}
+            className="save-btn"
+            disabled={isSaving}
+          >
+            {isSaving ? 'Saving...' : 'Save'}
+          </button>
         </div>
 
         <div className="property-summary">
-          <h3>{selectedProperty["property_address"]}, {selectedProperty["city"]}, {selectedProperty["state"]} {selectedProperty["zip"]}</h3>
+          <h3>
+            {selectedProperty["property_address"]}, {selectedProperty["city"]}, {selectedProperty["state"]} {selectedProperty["zip"]}
+            {editedProperty.is_favorite === 1 && <span className="favorite-badge"> ⭐ Favorited</span>}
+          </h3>
           {selectedProperty["est_value"] !== "-" && (
             <p><strong>Estimated Value:</strong> {selectedProperty["est_value"]}</p>
           )}
@@ -639,7 +752,12 @@ function App() {
                 {section.fields.map((field, index) => (
                   <div key={index} className="detail-item">
                     <strong>{field.label}:</strong>
-                    <span>{formatValue(selectedProperty[field.key])}</span>
+                    <input
+                      type="text"
+                      value={formatValue(editedProperty[field.key])}
+                      onChange={(e) => handleFieldChange(field.key, e.target.value)}
+                      className="editable-input"
+                    />
                   </div>
                 ))}
               </div>
